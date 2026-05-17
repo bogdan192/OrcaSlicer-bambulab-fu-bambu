@@ -20,7 +20,8 @@ static auto print_canceled_str    = _u8L("Task canceled.");
 static auto send_print_failed_str = _u8L("Failed to send the print job. Please try again.");
 static auto upload_ftp_failed_str = _u8L("Failed to upload file to ftp. Please try again.");
 
-static auto desc_network_error     = _u8L("Check the current status of the bambu server by clicking on the link above.");
+static auto desc_network_error     = _u8L("Check the network connection. For LAN/VPN direct access, confirm the VPN route, "
+                                          "printer IP, and access code are reachable.");
 static auto desc_file_too_large    = _u8L("The size of the print file is too large. Please adjust the file size and try again.");
 static auto desc_fail_not_exist    = _u8L("Print file not found, please slice it again and send it for printing.");
 static auto desc_upload_ftp_failed = _u8L("Failed to upload print file to FTP. Please check the network status and try again.");
@@ -105,10 +106,12 @@ void SendJob::process(Ctl &ctl)
     int curr_percent = 10;
     NetworkAgent* agent = wxGetApp().getAgent();
     AppConfig* config = wxGetApp().app_config;
+    const bool direct_only = config && config->get_bool("lan_mode_only");
+    const std::string effective_connection_type = direct_only ? "lan" : this->connection_type;
     int result = -1;
     std::string http_body;
 
-    if (this->connection_type == "lan") {
+    if (effective_connection_type == "lan") {
         msg = _u8L("Sending print job over LAN");
     }
     else {
@@ -175,7 +178,7 @@ void SendJob::process(Ctl &ctl)
 
     params.plate_index          = curr_plate_idx;
     params.ams_mapping          = this->task_ams_mapping;
-    params.connection_type      = this->connection_type;
+    params.connection_type      = effective_connection_type;
     params.task_use_ams         = this->task_use_ams;
 
     // local print access
@@ -198,9 +201,9 @@ void SendJob::process(Ctl &ctl)
     };
 
     auto update_fn = [this, &ctl,
-        &msg, &curr_percent, &error_text, StagePercentPoint](int stage, int code, std::string info) {
+        &msg, &curr_percent, &error_text, effective_connection_type, StagePercentPoint](int stage, int code, std::string info) {
                         if (stage == SendingPrintJobStage::PrintingStageCreate) {
-                            if (this->connection_type == "lan") {
+                            if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending G-code file over LAN");
                             } else {
                                 msg = _u8L("Sending G-code file to SD card");
@@ -208,7 +211,7 @@ void SendJob::process(Ctl &ctl)
                         }
                         else if (stage == SendingPrintJobStage::PrintingStageUpload) {
                             if (code >= 0 && code <= 100 && !info.empty()) {
-							    if (this->connection_type == "lan") {
+							    if (effective_connection_type == "lan") {
                                     msg = _u8L("Sending G-code file over LAN");
 							    }
 							    else {
@@ -223,7 +226,7 @@ void SendJob::process(Ctl &ctl)
                             msg = format(_u8L("Successfully sent. Close current page in %s s"), info);
 						}
 						else {
-							if (this->connection_type == "lan") {
+							if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending G-code file over LAN");
 							}
 							else {
@@ -297,6 +300,13 @@ void SendJob::process(Ctl &ctl)
             ctl.update_status(curr_percent, _u8L("Sending G-code file over LAN"));
         }
     } else {
+        if (params.dev_ip.empty() || params.password.empty()) {
+            ctl.update_status(curr_percent, _u8L("LAN/VPN direct printer access requires a reachable printer IP and access code."));
+            if (m_enter_ip_address_fun_fail) {
+                m_enter_ip_address_fun_fail(-1);
+            }
+            return;
+        }
           switch(this->sdcard_state) {
                 case DevStorage::SdcardState::NO_SDCARD:
                     ctl.update_status(curr_percent, _u8L("Storage needs to be inserted before sending to printer."));

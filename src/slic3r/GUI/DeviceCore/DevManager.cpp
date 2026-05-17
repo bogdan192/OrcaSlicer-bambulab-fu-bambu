@@ -14,6 +14,20 @@ using namespace nlohmann;
 
 namespace Slic3r
 {
+    namespace {
+        bool lan_vpn_direct_mode_enabled()
+        {
+            AppConfig* config = GUI::wxGetApp().app_config;
+            return config && config->get_bool("lan_mode_only");
+        }
+
+        bool should_use_direct_printer_connection(const MachineObject* obj)
+        {
+            return obj && (obj->is_lan_mode_printer() ||
+                           (lan_vpn_direct_mode_enabled() && !obj->get_dev_ip().empty() && obj->has_access_right()));
+        }
+    }
+
     DeviceManager::DeviceManager(NetworkAgent* agent)
     {
         m_agent = agent;
@@ -495,11 +509,12 @@ namespace Slic3r
         auto last_selected = my_machine_list.find(selected_machine);
         if (last_selected != my_machine_list.end() && selected_machine != dev_id)
         {
-            if (last_selected->second->connection_type() == "lan")
+            if (should_use_direct_printer_connection(last_selected->second))
             {
-                m_agent->disconnect_printer();
+                if (m_agent)
+                    m_agent->disconnect_printer();
             }
-            else if (last_selected->second->connection_type() == "cloud") {
+            else if (!lan_vpn_direct_mode_enabled() && last_selected->second->connection_type() == "cloud") {
                 m_agent->set_user_selected_machine("");
             }
         }
@@ -510,8 +525,13 @@ namespace Slic3r
             if (selected_machine == dev_id)
             {
                 // same dev_id, cloud => reset update time
-                if (it->second->connection_type() != "lan")
+                if (!should_use_direct_printer_connection(it->second))
                 {
+                    if (lan_vpn_direct_mode_enabled()) {
+                        BOOST_LOG_TRIVIAL(warning) << "set_selected_machine: direct mode requires saved IP/access code, dev_id =" << dev_id;
+                        return true;
+                    }
+
                     BOOST_LOG_TRIVIAL(info) << "set_selected_machine: same cloud machine, dev_id =" << dev_id
                         << ", just reset update time";
 
@@ -548,12 +568,18 @@ namespace Slic3r
             {
                 if (m_agent)
                 {
-                    if (it->second->connection_type() != "lan" || it->second->connection_type().empty())
+                    if (!should_use_direct_printer_connection(it->second))
                     {
-                        // diff dev_id, cloud => set_user_selected_machine(new)
-                        BOOST_LOG_TRIVIAL(info) << "set_selected_machine: select new cloud machine, dev_id =" << dev_id;
-                        m_agent->set_user_selected_machine(dev_id);
-                        it->second->reset();
+                        if (lan_vpn_direct_mode_enabled()) {
+                            BOOST_LOG_TRIVIAL(warning)
+                                << "set_selected_machine: direct mode selected printer without saved IP/access code, dev_id =" << dev_id;
+                            it->second->reset();
+                        } else {
+                            // diff dev_id, cloud => set_user_selected_machine(new)
+                            BOOST_LOG_TRIVIAL(info) << "set_selected_machine: select new cloud machine, dev_id =" << dev_id;
+                            m_agent->set_user_selected_machine(dev_id);
+                            it->second->reset();
+                        }
                     }
                     else
                     {
@@ -921,7 +947,8 @@ namespace Slic3r
         if (obj && m_manager->get_my_machine(obj->get_dev_id()) == nullptr)
         {
             m_manager->set_selected_machine("");
-            agent->set_user_selected_machine("");
+            if (!lan_vpn_direct_mode_enabled())
+                agent->set_user_selected_machine("");
             return;
         }
 

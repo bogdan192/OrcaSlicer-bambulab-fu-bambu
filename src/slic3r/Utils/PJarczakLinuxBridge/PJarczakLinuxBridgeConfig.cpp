@@ -144,14 +144,9 @@ bool should_force_linux_plugin_payload(const std::string& plugin_name)
     return enabled() && use_bridge_network_module() && plugin_name == "plugins";
 }
 
-const char* forced_download_os_type()
+const char* bridge_payload_os_type()
 {
     return "linux";
-}
-
-const char* forced_client_version()
-{
-    return "02.05.02.51";
 }
 
 std::string bridge_network_module_stem()

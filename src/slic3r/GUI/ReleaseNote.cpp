@@ -1378,8 +1378,9 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
     m_line_top->SetBackgroundColour(wxColour(166, 169, 170));
 
     comfirm_before_check_text = _L("Try the following methods to update the connection parameters and reconnect to the printer.");
-    comfirm_before_enter_text = _L("1. Please confirm Orca Slicer and your printer are in the same LAN.");
-    comfirm_after_enter_text  = _L("2. If the IP and Access Code below are different from the actual values on your printer, please correct them.");
+    comfirm_before_enter_text = _L("1. Please confirm Orca Slicer can reach your printer directly on LAN or through your VPN.");
+    comfirm_after_enter_text  = _L("2. If the IP and Access Code below are different from the actual values on your printer, "
+                                   "please correct them.");
     comfirm_last_enter_text   = _L("3. Please obtain the device SN from the printer side; it is usually found in the device information on the printer screen.");
 
     m_tip0 = new Label(this, ::Label::Body_13, comfirm_before_check_text, LB_AUTO_WRAP);
@@ -1465,7 +1466,7 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
     m_tips_modelID->SetMaxSize(wxSize(FromDIP(168), -1));
 
     m_input_modelID = new ComboBox(ip_input_bot_panel, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(168), FromDIP(28)), 0, nullptr, wxCB_READONLY);
-    // m_input_modelID->Bind(wxEVT_TEXT, &InputIpAddressDialog::on_text, this);
+    m_input_modelID->Bind(wxEVT_COMBOBOX, &InputIpAddressDialog::on_text, this);
     m_input_modelID->SetMinSize(wxSize(FromDIP(168), FromDIP(28)));
     m_input_modelID->SetMaxSize(wxSize(FromDIP(168), FromDIP(28)));
 
@@ -1528,7 +1529,7 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
     m_button_ok->Enable(false);
     m_button_ok->Bind(wxEVT_LEFT_DOWN, &InputIpAddressDialog::on_ok, this);
 
-    m_button_manual_setup = new Button(this, _L("Manual Setup"));
+    m_button_manual_setup = new Button(this, _L("Manual LAN/VPN Setup"));
     m_button_manual_setup->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
     m_button_manual_setup->Enable(false);
 
@@ -1538,8 +1539,6 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
         event.SetInt(1);
         wxPostEvent(this, event);
     });
-
-    m_button_manual_setup->Hide();
 
     m_sizer_button->AddStretchSpacer();
     m_sizer_button->Add(m_button_manual_setup, 0, wxALL, FromDIP(5));
@@ -1667,15 +1666,16 @@ InputIpAddressDialog::InputIpAddressDialog(wxWindow *parent)
 
 void InputIpAddressDialog::switch_input_panel(int index)
 {
-    m_button_manual_setup->Hide();
     if (index == 0) {
         ip_input_top_panel->Show();
         ip_input_bot_panel->Hide();
+        m_button_manual_setup->Show();
         m_step_icon_panel3->Hide();
         m_tip3->Hide();
     } else {
-        ip_input_top_panel->Hide();
+        ip_input_top_panel->Show();
         ip_input_bot_panel->Show();
+        m_button_manual_setup->Hide();
         m_step_icon_panel3->Show();
         m_tip3->Show();
 
@@ -1683,6 +1683,8 @@ void InputIpAddressDialog::switch_input_panel(int index)
         m_button_ok->Enable(false);
     }
     current_input_index = index;
+    wxCommandEvent e;
+    on_text(e);
 }
 
 void InputIpAddressDialog::on_cancel()
@@ -1742,10 +1744,6 @@ void InputIpAddressDialog::update_test_msg(wxString msg,bool connected)
              m_test_wrong_msg->SetLabelText(msg);
              m_test_wrong_msg->SetMinSize(wxSize(FromDIP(355), -1));
              m_test_wrong_msg->SetMaxSize(wxSize(FromDIP(355), -1));
-             if (current_input_index == 0) {
-                 m_button_manual_setup->Show();
-                 m_button_manual_setup->Enable();
-             }
              wxCommandEvent e;
              on_text(e);
          }
@@ -1931,7 +1929,10 @@ void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_
     if (result < 0) {
         post_update_test_msg(w, wxEmptyString, true);
         if (result == -1) {
-            post_update_test_msg(w, _L("Failed to connect to printer."), false);
+            post_update_test_msg(w,
+                _L("Failed to connect to printer. Check that your VPN is connected and the printer IP/access code are reachable, "
+                   "or use manual LAN/VPN setup."),
+                false);
         }
         else if (result == -2) {
             post_update_test_msg(w, _L("Failed to publish login request."), false);
@@ -1953,7 +1954,10 @@ void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_
 
     if (detectData.connect_type == "cloud") {
         post_update_test_msg(w, wxEmptyString, true);
-        post_update_test_msg(w, _L("The printer mode is incorrect, please switch to LAN Only."), false);
+        post_update_test_msg(w,
+            _L("The printer is not reporting direct access. Please use LAN/VPN direct printer access with a reachable IP "
+               "and access code."),
+            false);
         return;
     }
     if (w.expired()) return;
@@ -2019,7 +2023,10 @@ void InputIpAddressDialog::on_check_ip_address_failed(wxCommandEvent& evt)
     }
     else {
         if (m_need_input_sn) {
-            update_test_msg(_L("Connection failed! If your IP and Access Code is correct, \nplease move to step 3 for troubleshooting network issues"), false);
+            update_test_msg(
+                _L("Connection failed! If your IP and Access Code are correct, please check your LAN/VPN route "
+                   "or continue with manual LAN/VPN setup."),
+                false);
         }
         else {
             update_test_msg(_L("Connection failed! Please refer to the wiki page."), false);
@@ -2044,17 +2051,18 @@ void InputIpAddressDialog::on_text(wxCommandEvent &evt)
     for (char c : str_access_code) {
         if (!(('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))) {
             invalid_access_code = false;
-            return;
+            break;
         }
     }
 
     // ORCA enabling / disabling buttons with conditions enough to change its style
     bool enable_btns = isIp(str_ip.ToStdString()) && str_access_code.Length() == 8 && invalid_access_code;
-    m_button_manual_setup->Enable(enable_btns);
+    m_button_manual_setup->Enable(current_input_index == 0 && enable_btns);
     m_button_ok->Enable(enable_btns);
 
-    if (current_input_index == 1)
-        m_button_ok->Enable(!str_name.IsEmpty() && str_sn.length() == 15);
+    if (current_input_index == 1) {
+        m_button_ok->Enable(enable_btns && !str_name.IsEmpty() && str_sn.length() == 15 && m_input_modelID->GetSelection() != wxNOT_FOUND);
+    }
 
 }
 

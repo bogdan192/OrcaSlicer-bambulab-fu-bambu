@@ -90,7 +90,7 @@ static void bmcu_start_github_version_check()
                 .timeout_connect(5)
                 .timeout_max(10)
                 .size_limit(512)
-                .header("User-Agent", "BambuStudio")
+                .header("User-Agent", std::string(SLIC3R_APP_NAME) + "/" + SoftFever_VERSION)
                 .on_complete([&](std::string b, unsigned st2) {
                     body = std::move(b);
                     http_status = st2;

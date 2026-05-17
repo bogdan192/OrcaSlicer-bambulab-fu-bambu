@@ -1566,6 +1566,13 @@ void PreferencesDialog::create_items()
     auto item_enable_plugin    = create_item_checkbox(_L("Enable network plug-in"), "", "installed_networking");
     g_sizer->Add(item_enable_plugin);
 
+    auto item_lan_vpn_direct = create_item_checkbox(
+        _L("LAN/VPN direct printer access"),
+        _L("Use the printer IP and access code directly over LAN or VPN for Bambu print and control actions. "
+           "Cloud fallback is disabled in this mode."),
+        "lan_mode_only");
+    g_sizer->Add(item_lan_vpn_direct);
+
     m_network_version_sizer = new wxBoxSizer(wxHORIZONTAL);
     m_network_version_sizer->AddSpacer(FromDIP(DESIGN_LEFT_MARGIN));
 

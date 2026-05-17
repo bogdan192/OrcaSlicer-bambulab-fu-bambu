@@ -169,8 +169,8 @@ private:
 /**
  * Create a NetworkAgent from AppConfig settings (main entry point)
  *
- * Creates a NetworkAgent with cloud agent only. The printer agent is created
- * separately when a printer is selected, via create_printer_agent_by_id().
+ * Creates a NetworkAgent from config. In direct-only Bambu mode this creates
+ * the local printer agent without creating a cloud service agent.
  *
  * Cloud provider selection:
  *   - use_orca_cloud=true  → OrcaCloudServiceAgent (default)

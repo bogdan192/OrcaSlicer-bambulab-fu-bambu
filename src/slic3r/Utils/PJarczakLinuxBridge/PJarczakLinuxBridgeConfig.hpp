@@ -11,8 +11,8 @@ bool enabled();
 bool use_bridge_network_module();
 bool source_module_is_network_module();
 bool should_force_linux_plugin_payload(const std::string& plugin_name);
-const char* forced_download_os_type();
-const char* forced_client_version();
+// Selects the Linux bridge artifact for plugin downloads; it is not a client identity override.
+const char* bridge_payload_os_type();
 
 std::string bridge_network_module_stem();
 std::string bridge_network_current_dir_name();

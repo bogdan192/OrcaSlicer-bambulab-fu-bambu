@@ -855,7 +855,7 @@ void SelectMachinePopup::OnLeftUp(wxMouseEvent &event)
             wxGetApp().popup_ping_bind_dialog();
         }
 
-        //bind with access code
+        // Add a directly reachable LAN/VPN printer with IP and access code.
         auto dc_rect = m_panel_direct_connection->ClientToScreen(wxPoint(0, 0));
         if (mouse_pos.x > dc_rect.x && mouse_pos.y > dc_rect.y && mouse_pos.x < (dc_rect.x + m_panel_direct_connection->GetSize().x) && mouse_pos.y < (dc_rect.y + m_panel_direct_connection->GetSize().y)) {
             InputIpAddressDialog dlgo;
@@ -1040,7 +1040,7 @@ PinCodePanel::PinCodePanel(wxWindow* parent, int type, wxWindowID winid /*= wxID
      dc.SetTextForeground(StateColor::darkModeColorFor(wxColour("#262E30"))); // ORCA fix text not visible on dark theme
      wxString txt;
      if (m_type == 0) {txt = _L("Bind with Pin Code");}
-     else if (m_type == 1) {txt = _L("Bind with Access Code");}
+     else if (m_type == 1) {txt = _L("Add LAN/VPN Printer");}
 
      WxFontUtils::get_suitable_font_size(0.5 * size.GetHeight(), dc);
      auto txt_size = dc.GetTextExtent(txt);

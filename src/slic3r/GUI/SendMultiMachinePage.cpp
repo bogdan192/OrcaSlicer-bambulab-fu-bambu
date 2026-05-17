@@ -372,7 +372,7 @@ void SendMultiMachinePage::refresh_user_device()
         return;
     }
 
-    auto all_machine = dev->get_my_cloud_machine_list();
+    auto all_machine = app_config->get_bool("lan_mode_only") ? dev->get_my_machine_list() : dev->get_my_cloud_machine_list();
     auto user_machine = std::map<std::string, MachineObject*>();
 
     //selected machine
@@ -487,7 +487,17 @@ PrintParams SendMultiMachinePage::request_params(MachineObject* obj)
     params.dev_id = obj->get_dev_id();
     params.dev_name = obj->get_dev_name();
     params.ftp_folder = obj->get_ftp_folder();
-    params.connection_type = obj->connection_type();
+    const bool direct_route = app_config->get_bool("lan_mode_only") || obj->connection_type() == "lan";
+    params.connection_type = direct_route ? "lan" : obj->connection_type();
+    params.username = "bblp";
+    params.password = obj->get_access_code();
+#if !BBL_RELEASE_TO_PUBLIC
+    params.use_ssl_for_mqtt = wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true";
+    params.use_ssl_for_ftp  = wxGetApp().app_config->get("enable_ssl_for_ftp") == "true";
+#else
+    params.use_ssl_for_mqtt = obj->local_use_ssl;
+    params.use_ssl_for_ftp  = obj->local_use_ssl_for_ftp;
+#endif
     params.print_type = "from_normal";
     params.filename =  job_data._3mf_path.string();
     params.config_filename = job_data._3mf_config_path.string();
@@ -543,7 +553,6 @@ PrintParams SendMultiMachinePage::request_params(MachineObject* obj)
         params.ams_mapping_info = mapping_info;
     }
 
-    params.connection_type = obj->connection_type();
     params.task_use_ams = use_ams;
 
     PartPlate* curr_plate = m_plater->get_partplate_list().get_curr_plate();
@@ -574,7 +583,7 @@ PrintParams SendMultiMachinePage::request_params(MachineObject* obj)
 
 
     // check access code and ip address
-    if (obj->connection_type() == "lan") {
+    if (params.connection_type == "lan") {
         /*params.dev_id = m_dev_id;
         params.project_name = "verify_job";
         params.filename = job_data._temp_path.string();

@@ -208,24 +208,40 @@ void NetworkAgent::apply_printer_callbacks(const std::shared_ptr<IPrinterAgent>&
 int NetworkAgent::init_log()
 {
     if (m_cloud_agent) return m_cloud_agent->init_log();
+    auto& plugin = BBLNetworkPlugin::instance();
+    auto agent = plugin.get_agent();
+    auto func = plugin.get_init_log();
+    if (func && agent) return func(agent);
     return -1;
 }
 
 int NetworkAgent::set_config_dir(std::string config_dir)
 {
     if (m_cloud_agent) return m_cloud_agent->set_config_dir(config_dir);
+    auto& plugin = BBLNetworkPlugin::instance();
+    auto agent = plugin.get_agent();
+    auto func = plugin.get_set_config_dir();
+    if (func && agent) return func(agent, config_dir);
     return -1;
 }
 
 int NetworkAgent::set_cert_file(std::string folder, std::string filename)
 {
     if (m_cloud_agent) return m_cloud_agent->set_cert_file(folder, filename);
+    auto& plugin = BBLNetworkPlugin::instance();
+    auto agent = plugin.get_agent();
+    auto func = plugin.get_set_cert_file();
+    if (func && agent) return func(agent, folder, filename);
     return -1;
 }
 
 int NetworkAgent::set_country_code(std::string country_code)
 {
     if (m_cloud_agent) return m_cloud_agent->set_country_code(country_code);
+    auto& plugin = BBLNetworkPlugin::instance();
+    auto agent = plugin.get_agent();
+    auto func = plugin.get_set_country_code();
+    if (func && agent) return func(agent, country_code);
     return -1;
 }
 

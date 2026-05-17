@@ -1,5 +1,4 @@
 #include "Http.hpp"
-#include "PJarczakLinuxBridge/PJarczakLinuxBridgeConfig.hpp"
 
 #include <cstdlib>
 #include <functional>
@@ -190,14 +189,8 @@ Http::priv::priv(const std::string &url)
     set_timeout_max(DEFAULT_TIMEOUT_MAX);
 	::curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, log_trace);
 	::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());   // curl makes a copy internally
-    std::string pjarczak_user_agent = SLIC3R_APP_NAME "/" SoftFever_VERSION;
-#if defined(__WINDOWS__) || defined(__APPLE__)
-    if (Slic3r::PJarczakLinuxBridge::enabled())
-        pjarczak_user_agent = std::string("BambuStudio/") + Slic3r::PJarczakLinuxBridge::forced_client_version();
-#elif defined(__LINUX__)
-    pjarczak_user_agent = std::string("BambuStudio/") + Slic3r::PJarczakLinuxBridge::forced_client_version();
-#endif
-	::curl_easy_setopt(curl, CURLOPT_USERAGENT, pjarczak_user_agent.c_str());
+    std::string user_agent = SLIC3R_APP_NAME "/" SoftFever_VERSION;
+	::curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
 	::curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, &error_buffer.front());
 #ifdef __WINDOWS__
 	::curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_MAX_TLSv1_2);

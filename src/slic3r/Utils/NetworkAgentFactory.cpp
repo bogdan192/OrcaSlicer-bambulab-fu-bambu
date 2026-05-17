@@ -95,8 +95,7 @@ std::shared_ptr<IPrinterAgent> NetworkAgentFactory::create_printer_agent_by_id(c
     auto  cache_it = cache.find(id);
     if (cache_it != cache.end()) {
         BOOST_LOG_TRIVIAL(info) << "Reusing cached printer agent: " << id;
-        if (cloud_agent)
-            cache_it->second->set_cloud_agent(cloud_agent);
+        cache_it->second->set_cloud_agent(cloud_agent);
         return cache_it->second;
     }
 
@@ -155,10 +154,13 @@ std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string& log_di
     if (!app_config)
         return std::make_unique<NetworkAgent>(nullptr, nullptr);
 
+    const bool direct_only = app_config->get_bool("lan_mode_only");
+    const bool installed_networking = app_config->get_bool("installed_networking") || direct_only;
+
     // Determine cloud provider from config
     bool use_orca_cloud = app_config->get_bool("use_orca_cloud");
 #if defined(_MSC_VER) || defined(_WIN32)
-    if (Slic3r::PJarczakLinuxBridge::enabled() && app_config->get_bool("installed_networking")) {
+    if (!direct_only && Slic3r::PJarczakLinuxBridge::enabled() && installed_networking) {
         BOOST_LOG_TRIVIAL(info) << "Linux bridge enabled on Windows - forcing BBL cloud agent";
         use_orca_cloud = false;
     }
@@ -166,7 +168,7 @@ std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string& log_di
 
     // Create cloud agent
     std::shared_ptr<ICloudServiceAgent> cloud_agent;
-    if (use_orca_cloud || app_config->get_bool("installed_networking")) {
+    if (!direct_only && (use_orca_cloud || installed_networking)) {
         CloudAgentProvider provider = use_orca_cloud ? CloudAgentProvider::Orca : CloudAgentProvider::BBL;
         cloud_agent                 = NetworkAgentFactory::create_cloud_agent(provider, log_dir);
         if (!cloud_agent) {
@@ -174,10 +176,18 @@ std::unique_ptr<NetworkAgent> create_agent_from_config(const std::string& log_di
         }
     }
 
-    // Create NetworkAgent with cloud agent only (printer agent added later when printer is selected)
-    auto agent = std::make_unique<NetworkAgent>(std::move(cloud_agent), nullptr);
+    std::shared_ptr<IPrinterAgent> printer_agent;
+    if (installed_networking) {
+        auto& plugin = BBLNetworkPlugin::instance();
+        if (plugin.is_loaded() && !plugin.has_agent()) {
+            plugin.create_agent(log_dir);
+        }
+        printer_agent = NetworkAgentFactory::create_printer_agent_by_id(BBL_PRINTER_AGENT_ID, cloud_agent, log_dir);
+    }
 
-    if (agent && use_orca_cloud) {
+    auto agent = std::make_unique<NetworkAgent>(std::move(cloud_agent), std::move(printer_agent));
+
+    if (agent && !direct_only && use_orca_cloud) {
         auto* orca_cloud = dynamic_cast<OrcaCloudServiceAgent*>(agent->get_cloud_agent().get());
         if (orca_cloud) {
             orca_cloud->configure_urls(app_config);

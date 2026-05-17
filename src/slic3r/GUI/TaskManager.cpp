@@ -223,7 +223,10 @@ int TaskManager::schedule(TaskStateInfo* task)
 #if 0
             int result = start_print_test(task->get_params(), task->update_status_fn, task->cancel_fn, task->wait_fn);
 #else
-            int result = m_agent->start_print(task->get_params(), task->update_status_fn, task->cancel_fn, task->wait_fn);
+            PrintParams params = task->get_params();
+            int result = params.connection_type == "lan"
+                ? m_agent->start_local_print(params, task->update_status_fn, task->cancel_fn)
+                : m_agent->start_print(params, task->update_status_fn, task->cancel_fn, task->wait_fn);
 #endif
             if (result == 0) {
                 last_sent_timestamp = std::chrono::system_clock::now();

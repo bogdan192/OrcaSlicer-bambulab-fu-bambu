@@ -952,11 +952,11 @@ void PresetUpdater::priv::sync_plugins(std::string http_url, std::string plugin_
 #if defined(__WINDOWS__)
     if (Slic3r::PJarczakLinuxBridge::enabled()) {
         std::map<std::string, std::string> current_headers = previous_headers;
-        current_headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::forced_download_os_type();
-        current_headers["X-BBL-Client-Name"] = "BambuStudio";
-        current_headers["X-BBL-Client-Version"] = Slic3r::PJarczakLinuxBridge::forced_client_version();
+        current_headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::bridge_payload_os_type();
+        current_headers["X-BBL-Client-Name"] = SLIC3R_APP_NAME;
+        current_headers["X-BBL-Client-Version"] = Slic3r::GUI::VersionInfo::convert_full_version(SLIC3R_VERSION);
         Slic3r::Http::set_extra_headers(current_headers);
-        BOOST_LOG_TRIVIAL(info) << boost::format("set X-BBL-OS-Type to %1% for bridge plugin sync") % Slic3r::PJarczakLinuxBridge::forced_download_os_type();
+        BOOST_LOG_TRIVIAL(info) << boost::format("set X-BBL-OS-Type to %1% for bridge plugin sync") % Slic3r::PJarczakLinuxBridge::bridge_payload_os_type();
         plugin_headers_overridden = true;
     } else if (GUI::wxGetApp().is_running_on_arm64() && !NetworkAgent::use_legacy_network) {
         std::map<std::string, std::string> current_headers = previous_headers;
@@ -968,11 +968,11 @@ void PresetUpdater::priv::sync_plugins(std::string http_url, std::string plugin_
 #else
     if (Slic3r::PJarczakLinuxBridge::enabled()) {
         std::map<std::string, std::string> current_headers = previous_headers;
-        current_headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::forced_download_os_type();
-        current_headers["X-BBL-Client-Name"] = "BambuStudio";
-        current_headers["X-BBL-Client-Version"] = Slic3r::PJarczakLinuxBridge::forced_client_version();
+        current_headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::bridge_payload_os_type();
+        current_headers["X-BBL-Client-Name"] = SLIC3R_APP_NAME;
+        current_headers["X-BBL-Client-Version"] = Slic3r::GUI::VersionInfo::convert_full_version(SLIC3R_VERSION);
         Slic3r::Http::set_extra_headers(current_headers);
-        BOOST_LOG_TRIVIAL(info) << boost::format("set X-BBL-OS-Type to %1% for bridge plugin sync") % Slic3r::PJarczakLinuxBridge::forced_download_os_type();
+        BOOST_LOG_TRIVIAL(info) << boost::format("set X-BBL-OS-Type to %1% for bridge plugin sync") % Slic3r::PJarczakLinuxBridge::bridge_payload_os_type();
         plugin_headers_overridden = true;
     }
 #endif

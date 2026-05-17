@@ -181,7 +181,10 @@ inline void auto_ignore_print_error_if_needed(Slic3r::MachineObject* obj)
             retry_sent = manager->trigger_auto_retry_print_ui_callback(obj->get_dev_id());
         }
 
-        if (!retry_sent) {
+        AppConfig* config = Slic3r::GUI::wxGetApp().app_config;
+        const bool direct_only = config && config->get_bool("lan_mode_only");
+
+        if (!retry_sent && !direct_only) {
             if (auto* agent = Slic3r::GUI::wxGetApp().getAgent()) {
                 retry_sent = agent->retry_last_print_request(obj->get_dev_id());
             }
@@ -2655,7 +2658,14 @@ bool MachineObject::is_camera_busy_off()
 int MachineObject::publish_json(const json& json_item, int qos, int flag)
 {
     int rtn = 0;
-    if (is_lan_mode_printer()) {
+    AppConfig* config = GUI::wxGetApp().app_config;
+    const bool direct_only = config && config->get_bool("lan_mode_only");
+    const bool has_direct_route = !get_dev_ip().empty() && has_access_right();
+    if (direct_only && !has_direct_route) {
+        BOOST_LOG_TRIVIAL(error)
+            << "publish_json: LAN/VPN direct mode requires printer IP and access code, dev_id=" << get_dev_id();
+        rtn = -1;
+    } else if (is_lan_mode_printer() || direct_only) {
         rtn = local_publish_json(json_item.dump(), qos, flag);
     } else {
         rtn = cloud_publish_json(json_item.dump(), qos, flag);

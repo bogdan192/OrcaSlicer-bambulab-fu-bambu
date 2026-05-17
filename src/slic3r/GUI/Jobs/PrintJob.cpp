@@ -28,7 +28,8 @@ static auto print_canceled_str    = _u8L("Task canceled.");
 static auto send_print_failed_str = _u8L("Failed to send the print job. Please try again.");
 static auto upload_ftp_failed_str = _u8L("Failed to upload file to ftp. Please try again.");
 
-static auto     desc_network_error          = _u8L("Check the current status of the bambu server by clicking on the link above.");
+static auto     desc_network_error          = _u8L("Check the network connection. For LAN/VPN direct access, confirm the VPN route, "
+                                                   "printer IP, and access code are reachable.");
 static auto     desc_file_too_large         = _u8L("The size of the print file is too large. Please adjust the file size and try again.");
 static auto     desc_fail_not_exist         = _u8L("Print file not found, please slice it again and send it for printing.");
 
@@ -139,8 +140,10 @@ void PrintJob::process(Ctl &ctl)
     int curr_percent = 10;
     NetworkAgent* m_agent = wxGetApp().getAgent();
     AppConfig* config = wxGetApp().app_config;
+    const bool direct_only = config && config->get_bool("lan_mode_only");
+    const std::string effective_connection_type = direct_only ? "lan" : this->connection_type;
 
-    if (this->connection_type == "lan") {
+    if (effective_connection_type == "lan") {
         msg = _u8L("Sending print job over LAN");
     }
     else {
@@ -208,7 +211,7 @@ void PrintJob::process(Ctl &ctl)
     params.password = m_access_code;
 
     // check access code and ip address
-    if (this->connection_type == "lan" && m_print_type == "from_normal") {
+    if (effective_connection_type == "lan" && m_print_type == "from_normal") {
         bool emmc_ok = false;
         bool ftp_ok = false;
         if (could_emmc_print) {
@@ -222,7 +225,7 @@ void PrintJob::process(Ctl &ctl)
             params.dev_id = m_dev_id;
             params.project_name = "verify_job";
             params.filename = job_data._temp_path.string();
-            params.connection_type = this->connection_type;
+            params.connection_type = effective_connection_type;
 
             result = m_agent->start_send_gcode_to_sdcard(params, nullptr, nullptr, nullptr);
 
@@ -262,7 +265,7 @@ void PrintJob::process(Ctl &ctl)
     params.ams_mapping2         = this->task_ams_mapping2;
     params.ams_mapping_info     = this->task_ams_mapping_info;
     params.nozzles_info         = this->task_nozzles_info;
-    params.connection_type      = this->connection_type;
+    params.connection_type      = effective_connection_type;
     params.task_use_ams         = this->task_use_ams;
     params.task_bed_type        = this->task_bed_type;
     params.print_type           = this->m_print_type;
@@ -388,11 +391,12 @@ void PrintJob::process(Ctl &ctl)
         &error_str,
         &curr_percent,
         &error_text,
+        effective_connection_type,
         StagePercentPoint
     ](int stage, int code, std::string info) {
 
                         if (stage == SendingPrintJobStage::PrintingStageCreate && !is_try_lan_mode_failed) {
-                            if (this->connection_type == "lan") {
+                            if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending print job over LAN");
                             } else {
                                 msg = _u8L("Sending print job through cloud service");
@@ -400,7 +404,7 @@ void PrintJob::process(Ctl &ctl)
                         }
                         else if (stage == SendingPrintJobStage::PrintingStageUpload && !is_try_lan_mode_failed) {
                             if (code >= 0 && code <= 100 && !info.empty()) {
-                                if (this->connection_type == "lan") {
+                                if (effective_connection_type == "lan") {
                                     msg = _u8L("Sending print job over LAN");
                                 } else {
                                     msg = _u8L("Sending print job through cloud service");
@@ -409,7 +413,7 @@ void PrintJob::process(Ctl &ctl)
                             }
                         }
                         else if (stage == SendingPrintJobStage::PrintingStageWaiting) {
-                            if (this->connection_type == "lan") {
+                            if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending print job over LAN");
                             } else {
                                 msg = _u8L("Sending print job through cloud service");
@@ -419,7 +423,7 @@ void PrintJob::process(Ctl &ctl)
                             msg = _u8L("Sending print configuration");
                         }
                         else if (stage == SendingPrintJobStage::PrintingStageSending && !is_try_lan_mode) {
-                            if (this->connection_type == "lan") {
+                            if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending print job over LAN");
                             } else {
                                 msg = _u8L("Sending print job through cloud service");
@@ -432,7 +436,7 @@ void PrintJob::process(Ctl &ctl)
                             }
                             ctl.clear_percent();
                         } else {
-                            if (this->connection_type == "lan") {
+                            if (effective_connection_type == "lan") {
                                 msg = _u8L("Sending print job over LAN");
                             } else {
                                 msg = _u8L("Sending print job through cloud service");
@@ -522,6 +526,12 @@ void PrintJob::process(Ctl &ctl)
     };
 
     if (m_print_type == "from_sdcard_view") {
+        if (direct_only) {
+            ctl.update_status(curr_percent,
+                _u8L("LAN/VPN direct printer access cannot start cloud SD-card print jobs. Use direct print from OrcaSlicer "
+                     "with the printer IP and access code reachable over your VPN."));
+            return;
+        }
         BOOST_LOG_TRIVIAL(info) << "print_job: try to send with cloud, model is sdcard view";
         ctl.update_status(curr_percent, _u8L("Sending print job through cloud service"));
         result = m_agent->start_sdcard_print(params, update_fn, cancel_fn);
@@ -535,59 +545,45 @@ void PrintJob::process(Ctl &ctl)
         else if (params.password.empty())
             params.comments = "no_password";
 
-
-        //use ftp only
-        if (!wxGetApp().app_config->get("lan_mode_only").empty() && wxGetApp().app_config->get("lan_mode_only") == "1") {
-
-            if (params.password.empty() || params.dev_ip.empty()) {
-                error_text = wxString::Format(_L("Access code:%s IP address:%s"), params.password, params.dev_ip);
-                result = BAMBU_NETWORK_ERR_FTP_UPLOAD_FAILED;
+        if (!this->cloud_print_only
+            && !params.password.empty()
+            && !params.dev_ip.empty()
+            && this->has_sdcard) {
+            // try to send local with record
+            BOOST_LOG_TRIVIAL(info) << "print_job: try to start local print with record";
+            ctl.update_status(curr_percent, _u8L("Sending print job over LAN"));
+            result = m_agent->start_local_print_with_record(params, update_fn, cancel_fn, wait_fn);
+            if (result == 0) {
+                params.comments = "";
+            }
+            else if (result == BAMBU_NETWORK_ERR_PRINT_WR_UPLOAD_FTP_FAILED) {
+                params.comments = "upload_failed";
             }
             else {
-                BOOST_LOG_TRIVIAL(info) << "print_job: use ftp send print only";
-                ctl.update_status(curr_percent, _u8L("Sending print job over LAN"));
-                is_try_lan_mode = true;
-                result = m_agent->start_local_print_with_record(params, update_fn, cancel_fn, wait_fn);
-                if (result < 0) {
-                    error_text = wxString::Format(_L("Access code:%s IP address:%s"), params.password, params.dev_ip);
-                    // try to send with cloud
-                    BOOST_LOG_TRIVIAL(warning) << "print_job: use ftp send print failed";
-                }
+                params.comments = (boost::format("failed(%1%)") % result).str();
             }
-        }
-        else {
-            if (!this->cloud_print_only
-                && !params.password.empty()
-                && !params.dev_ip.empty()
-                && this->has_sdcard) {
-                // try to send local with record
-                BOOST_LOG_TRIVIAL(info) << "print_job: try to start local print with record";
-                ctl.update_status(curr_percent, _u8L("Sending print job over LAN"));
-                result = m_agent->start_local_print_with_record(params, update_fn, cancel_fn, wait_fn);
-                if (result == 0) {
-                    params.comments = "";
-                }
-                else if (result == BAMBU_NETWORK_ERR_PRINT_WR_UPLOAD_FTP_FAILED) {
-                    params.comments = "upload_failed";
-                }
-                else {
-                    params.comments = (boost::format("failed(%1%)") % result).str();
-                }
-                if (result < 0) {
-                    is_try_lan_mode_failed = true;
-                    // try to send with cloud
-                    BOOST_LOG_TRIVIAL(warning) << "print_job: try to send with cloud";
-                    ctl.update_status(curr_percent, _u8L("Sending print job through cloud service"));
-                    result = m_agent->start_print(params, update_fn, cancel_fn, wait_fn);
-                }
-            }
-            else {
-                BOOST_LOG_TRIVIAL(info) << "print_job: send with cloud";
+            if (result < 0) {
+                is_try_lan_mode_failed = true;
+                // try to send with cloud
+                BOOST_LOG_TRIVIAL(warning) << "print_job: try to send with cloud";
                 ctl.update_status(curr_percent, _u8L("Sending print job through cloud service"));
                 result = m_agent->start_print(params, update_fn, cancel_fn, wait_fn);
             }
         }
+        else {
+            BOOST_LOG_TRIVIAL(info) << "print_job: send with cloud";
+            ctl.update_status(curr_percent, _u8L("Sending print job through cloud service"));
+            result = m_agent->start_print(params, update_fn, cancel_fn, wait_fn);
+        }
     } else {
+        if (params.dev_ip.empty() || params.password.empty()) {
+            ctl.update_status(curr_percent, _u8L("LAN/VPN direct printer access requires a reachable printer IP and access code."));
+            if (m_enter_ip_address_fun_fail) {
+                m_enter_ip_address_fun_fail();
+            }
+            m_job_finished = true;
+            return;
+        }
         if (this->could_emmc_print) {
             ctl.update_status(curr_percent, _u8L("Sending print job over LAN"));
             result = m_agent->start_local_print(params, update_fn, cancel_fn);

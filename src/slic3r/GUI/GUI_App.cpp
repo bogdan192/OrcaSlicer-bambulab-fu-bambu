@@ -1235,9 +1235,9 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
 
     const bool pj_force_linux_payload = Slic3r::PJarczakLinuxBridge::should_force_linux_plugin_payload(name);
 #if defined(__LINUX__)
-    const bool pj_force_bambustudio_headers = pj_force_linux_payload || name == "plugins";
+    const bool pj_request_bridge_payload_headers = pj_force_linux_payload || name == "plugins";
 #else
-    const bool pj_force_bambustudio_headers = pj_force_linux_payload;
+    const bool pj_request_bridge_payload_headers = pj_force_linux_payload;
 #endif
     std::map<std::string, std::string> saved_headers = Slic3r::Http::get_extra_headers();
     bool changed_headers = false;
@@ -1249,11 +1249,11 @@ int GUI_App::download_plugin(std::string name, std::string package_name, Install
         }
     };
 
-    if (pj_force_bambustudio_headers) {
+    if (pj_request_bridge_payload_headers) {
         auto headers = saved_headers;
-        headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::forced_download_os_type();
-        headers["X-BBL-Client-Name"] = "BambuStudio";
-        headers["X-BBL-Client-Version"] = Slic3r::PJarczakLinuxBridge::forced_client_version();
+        headers["X-BBL-OS-Type"] = Slic3r::PJarczakLinuxBridge::bridge_payload_os_type();
+        headers["X-BBL-Client-Name"] = SLIC3R_APP_NAME;
+        headers["X-BBL-Client-Version"] = VersionInfo::convert_full_version(SLIC3R_VERSION);
         Slic3r::Http::set_extra_headers(headers);
         changed_headers = true;
     }
@@ -1911,12 +1911,14 @@ void GUI_App::init_networking_callbacks()
                 if (is_closing())
                     return;
                 BOOST_LOG_TRIVIAL(trace) << "static: server connected";
-                m_agent->set_user_selected_machine(m_agent->get_user_selected_machine());
+                if (!app_config->get_bool("lan_mode_only"))
+                    m_agent->set_user_selected_machine(m_agent->get_user_selected_machine());
                     if (this->is_enable_multi_machine()) {
                         auto evt = new wxCommandEvent(EVT_UPDATE_MACHINE_LIST);
                         wxQueueEvent(this, evt);
                     }
-                    m_agent->set_user_selected_machine(m_agent->get_user_selected_machine());
+                    if (!app_config->get_bool("lan_mode_only"))
+                        m_agent->set_user_selected_machine(m_agent->get_user_selected_machine());
                     //subscribe device
                     if (m_agent->is_user_login()) {
 
@@ -2388,40 +2390,17 @@ std::map<std::string, std::string> GUI_App::get_extra_header()
 {
     std::map<std::string, std::string> extra_headers;
     extra_headers.insert(std::make_pair("X-BBL-Client-Type", "slicer"));
+    extra_headers.insert(std::make_pair("X-BBL-Client-Name", std::string(SLIC3R_APP_NAME)));
+    extra_headers.insert(std::make_pair("X-BBL-Client-Version", VersionInfo::convert_full_version(SLIC3R_VERSION)));
 
-    bool use_bambustudio_identity = false;
-#if defined(__WINDOWS__) || defined(__APPLE__)
-    use_bambustudio_identity = Slic3r::PJarczakLinuxBridge::enabled();
-#elif defined(__LINUX__)
-    use_bambustudio_identity = true;
-#endif
-
-    if (use_bambustudio_identity) {
-        extra_headers.insert(std::make_pair("X-BBL-Client-Name", std::string("BambuStudio")));
-        extra_headers.insert(std::make_pair("X-BBL-Client-Version", std::string(Slic3r::PJarczakLinuxBridge::forced_client_version())));
-    } else {
-        extra_headers.insert(std::make_pair("X-BBL-Client-Name", std::string(SLIC3R_APP_NAME)));
-        extra_headers.insert(std::make_pair("X-BBL-Client-Version", VersionInfo::convert_full_version(SLIC3R_VERSION)));
-    }
 #if defined(__WINDOWS__)
-    if (Slic3r::PJarczakLinuxBridge::enabled()) {
-        extra_headers.insert(std::make_pair("X-BBL-OS-Type", Slic3r::PJarczakLinuxBridge::forced_download_os_type()));
-    }
 #ifdef _M_X64
-    else {
-        extra_headers.insert(std::make_pair("X-BBL-OS-Type", "windows"));
-    }
+    extra_headers.insert(std::make_pair("X-BBL-OS-Type", "windows"));
 #else
-    else {
-        extra_headers.insert(std::make_pair("X-BBL-OS-Type", "windows_arm"));
-    }
+    extra_headers.insert(std::make_pair("X-BBL-OS-Type", "windows_arm"));
 #endif
 #elif defined(__APPLE__)
-    if (Slic3r::PJarczakLinuxBridge::enabled()) {
-        extra_headers.insert(std::make_pair("X-BBL-OS-Type", Slic3r::PJarczakLinuxBridge::forced_download_os_type()));
-    } else {
-        extra_headers.insert(std::make_pair("X-BBL-OS-Type", "macos"));
-    }
+    extra_headers.insert(std::make_pair("X-BBL-OS-Type", "macos"));
 #elif defined(__LINUX__)
     extra_headers.insert(std::make_pair("X-BBL-OS-Type", "linux"));
 #endif
@@ -2462,7 +2441,8 @@ void GUI_App::on_start_subscribe_again(std::string dev_id)
         MachineObject* obj = dev->get_selected_machine();
         if (!obj) return;
 
-        if ( (dev_id == obj->get_dev_id()) && obj->is_connecting() && obj->subscribe_counter > 0) {
+        if ((dev_id == obj->get_dev_id()) && obj->is_connecting() && obj->subscribe_counter > 0 &&
+            !app_config->get_bool("lan_mode_only")) {
             obj->subscribe_counter--;
             if(wxGetApp().getAgent()) wxGetApp().getAgent()->set_user_selected_machine(dev_id);
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": dev_id=" << obj->get_dev_id();
@@ -3722,7 +3702,8 @@ void GUI_App::copy_network_if_available()
 
 bool GUI_App::on_init_network(bool try_backup)
 {
-    auto should_load_networking_plugin = app_config->get_bool("installed_networking");
+    const bool direct_only = app_config->get_bool("lan_mode_only");
+    auto should_load_networking_plugin = app_config->get_bool("installed_networking") || direct_only;
     const bool bridge_mode = Slic3r::PJarczakLinuxBridge::enabled();
     const boost::filesystem::path bridge_plugin_folder = boost::filesystem::path(data_dir()) / "plugins";
     std::string bridge_payload_reason;
@@ -4911,7 +4892,7 @@ void GUI_App::get_login_info()
                 GUI::wxGetApp().run_script(strJS);
             }
         }
-        if(app_config->get_bool("installed_networking")) {
+        if(app_config->get_bool("installed_networking") && !app_config->get_bool("lan_mode_only")) {
             mainframe->m_webview->SetLoginPanelVisibility(true);
         } else {
             mainframe->m_webview->SetLoginPanelVisibility(false);
@@ -4960,7 +4941,8 @@ void GUI_App::request_user_logout()
     if (m_agent && m_agent->is_user_login()) {
         // Update data first before showing dialogs
         m_agent->user_logout(true);
-        m_agent->set_user_selected_machine("");
+        if (!app_config->get_bool("lan_mode_only"))
+            m_agent->set_user_selected_machine("");
         /* delete old user settings */
         bool     transfer_preset_changes = false;
         wxString header = _L("Some presets are modified.") + "\n" +
