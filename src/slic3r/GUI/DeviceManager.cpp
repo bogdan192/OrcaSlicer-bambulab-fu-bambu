@@ -3,7 +3,12 @@
 #include "libslic3r/Time.hpp"
 #include "libslic3r/Thread.hpp"
 #include "slic3r/Utils/NetworkAgent.hpp"
+
+
 #include "GuiColor.hpp"
+#include "libslic3r/AppConfig.hpp"
+
+using Slic3r::AppConfig;
 
 #include "GUI_App.hpp"
 #include "MsgDialog.hpp"
