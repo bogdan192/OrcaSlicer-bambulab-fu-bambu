@@ -1334,6 +1334,11 @@ void MainFrame::init_tabpanel() {
 
 // SoftFever
 void MainFrame::show_device(bool bBBLPrinter) {
+    if (!bBBLPrinter && wxGetApp().preset_bundle && wxGetApp().app_config &&
+        wxGetApp().app_config->get_bool("lan_mode_only") && wxGetApp().preset_bundle->is_bbl_vendor()) {
+        bBBLPrinter = true;
+    }
+
     auto idx = -1;
     if (bBBLPrinter) {
         if (m_tabpanel->FindPage(m_monitor) != wxNOT_FOUND) {
@@ -4117,7 +4122,8 @@ void MainFrame::load_printer_url(wxString url, wxString apikey)
 void MainFrame::load_printer_url()
 {
     PresetBundle &preset_bundle = *wxGetApp().preset_bundle;
-    if (preset_bundle.use_bbl_device_tab())
+    const bool direct_bambu_mode = wxGetApp().app_config && wxGetApp().app_config->get_bool("lan_mode_only") && preset_bundle.is_bbl_vendor();
+    if (preset_bundle.use_bbl_device_tab() || direct_bambu_mode)
         return;
 
     auto     cfg = preset_bundle.printers.get_edited_preset().config;

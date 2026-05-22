@@ -21,6 +21,8 @@
 #include <wx/dcgraph.h>
 #include <miniz.h>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include "Plater.hpp"
 #include "BitmapCache.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
@@ -1689,6 +1691,7 @@ void InputIpAddressDialog::switch_input_panel(int index)
 
 void InputIpAddressDialog::on_cancel()
 {
+    m_detect_pending = false;
     if (m_thread) {
         m_thread->interrupt();
         m_thread->detach();
@@ -1771,6 +1774,8 @@ bool InputIpAddressDialog::isIp(std::string ipstr)
 
 void InputIpAddressDialog::on_ok(wxMouseEvent& evt)
 {
+    update_test_msg(_L("Connecting..."), true);
+
     if (!m_need_input_sn) {
         on_send_retry();
         return;
@@ -1800,12 +1805,35 @@ void InputIpAddressDialog::on_ok(wxMouseEvent& evt)
     Layout();
     Fit();
 
+    m_detect_pending = true;
+    const uint64_t detect_generation = ++m_detect_generation;
     token_.reset(this, nop_deleter);
     m_thread = new boost::thread(boost::bind(&InputIpAddressDialog::workerThreadFunc, this, str_ip, str_access_code, str_sn, str_model_id, str_name));
+    std::weak_ptr<InputIpAddressDialog> w = std::weak_ptr<InputIpAddressDialog>(token_);
+
+    std::thread([this, w, detect_generation]() {
+        std::this_thread::sleep_for(std::chrono::seconds(15));
+        if (w.expired())
+            return;
+
+        if (!m_detect_pending.load() || m_detect_generation.load() != detect_generation)
+            return;
+
+        post_update_test_msg(
+            w,
+            _L("Connection timed out. Verify your LAN/VPN route and printer IP, then retry or continue with manual LAN/VPN setup."),
+            false);
+        CallAfter([this]() {
+            m_button_ok->Enable(true);
+            m_button_manual_setup->Enable(true);
+        });
+    }).detach();
 }
 
 void InputIpAddressDialog::on_send_retry()
 {
+    update_test_msg(_L("Connecting..."), true);
+
     m_test_right_msg->Hide();
     m_test_wrong_msg->Hide();
     m_img_step3->Hide();
@@ -1901,6 +1929,11 @@ void InputIpAddressDialog::post_update_test_msg(std::weak_ptr<InputIpAddressDial
 
 void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_access_code, std::string sn, std::string model_id, std::string name)
 {
+    struct DetectDoneGuard {
+        std::atomic<bool>& pending;
+        ~DetectDoneGuard() { pending = false; }
+    } detect_done_guard{ m_detect_pending };
+
     std::weak_ptr<InputIpAddressDialog> w = std::weak_ptr<InputIpAddressDialog>(token_);
 
     post_update_test_msg(w, _L("connecting..."), true);
@@ -1912,7 +1945,13 @@ void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_
 #ifdef __APPLE__
         result = -3;
 #else
-        result = wxGetApp().getAgent()->bind_detect(str_ip, "secure", detectData);
+        NetworkAgent* agent = wxGetApp().getAgent();
+        if (!agent || !Slic3r::NetworkAgent::is_network_module_loaded()) {
+            BOOST_LOG_TRIVIAL(warning) << "InputIpAddressDialog: network agent is unavailable, switching to manual LAN/VPN setup";
+            result = -3;
+        } else {
+            result = agent->bind_detect(str_ip, "secure", detectData);
+        }
 #endif
 
     } else {
@@ -1964,6 +2003,12 @@ void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_
 
     CallAfter([this, detectData, str_ip, str_access_code, w]() {
         DeviceManager* dev = wxGetApp().getDeviceManager();
+        if (!dev) {
+            post_update_test_msg(w, wxEmptyString, true);
+            post_update_test_msg(w, _L("Device manager is not available. Please restart Orca Slicer and try again."), false);
+            return;
+        }
+
         BBLocalMachine machine;
         machine.dev_name = detectData.dev_name;
         machine.dev_ip = str_ip;

@@ -544,23 +544,14 @@ VendorType PresetBundle::get_current_vendor_type()
 
 bool PresetBundle::use_bbl_network()
 {
-    const auto cfg             = printers.get_edited_preset().config;
-    const bool use_bbl_network = is_bbl_vendor() && !cfg.opt_bool("bbl_use_printhost");
-    return use_bbl_network;
+    // This fork treats Bambu printers as native/direct devices. A stale
+    // print_host value must not route Bambu presets into generic web-host
+    // upload or Device webview code.
+    return is_bbl_vendor();
 }
 
 bool PresetBundle::use_bbl_device_tab() {
-    if (!is_bbl_vendor()) {
-        return false;
-    }
-
-    if (use_bbl_network()) {
-        return true;
-    }
-
-    const auto cfg = printers.get_edited_preset().config;
-    // Use bbl device tab if printhost webui url is not set 
-    return cfg.opt_string("print_host_webui").empty();
+    return is_bbl_vendor();
 }
 
 bool PresetBundle::backup_user_folder() const

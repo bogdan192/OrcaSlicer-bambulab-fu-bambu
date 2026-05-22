@@ -892,4 +892,15 @@ int NetworkAgent::get_mw_user_4ulist(int seed, int limit, std::function<void(std
     return -1;
 }
 
+void NetworkAgent::on_local_connect_failed(const std::string& dev_id, const std::string& msg)
+{
+    OnLocalConnectedFn fn;
+    {
+        std::lock_guard<std::mutex> lock(m_agent_mutex);
+        fn = m_printer_callbacks.on_local_connect_fn;
+    }
+    if (fn)
+        fn(ConnectStatusFailed, dev_id, msg);
+}
+
 } // namespace Slic3r

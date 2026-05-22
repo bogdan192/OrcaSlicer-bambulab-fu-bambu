@@ -556,11 +556,13 @@ namespace Slic3r
                         it->second->reset();
 
 #if !BBL_RELEASE_TO_PUBLIC
-                        it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
+                        int cr = it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
 #else
-                        it->second->connect(it->second->local_use_ssl);
+                        int cr = it->second->connect(it->second->local_use_ssl);
 #endif
-                        it->second->set_lan_mode_connection_state(true);
+                        if (cr != BAMBU_NETWORK_SUCCESS) {
+                            m_agent->on_local_connect_failed(dev_id, std::to_string(cr));
+                        }
                     }
                 }
             }
@@ -586,11 +588,13 @@ namespace Slic3r
                         BOOST_LOG_TRIVIAL(info) << "set_selected_machine: select new lan machine, dev_id =" << dev_id;
                         it->second->reset();
 #if !BBL_RELEASE_TO_PUBLIC
-                        it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
+                        int cr = it->second->connect(Slic3r::GUI::wxGetApp().app_config->get("enable_ssl_for_mqtt") == "true" ? true : false);
 #else
-                        it->second->connect(it->second->local_use_ssl);
+                        int cr = it->second->connect(it->second->local_use_ssl);
 #endif
-                        it->second->set_lan_mode_connection_state(true);
+                        if (cr != BAMBU_NETWORK_SUCCESS) {
+                            m_agent->on_local_connect_failed(dev_id, std::to_string(cr));
+                        }
                     }
                 }
             }
@@ -949,6 +953,20 @@ namespace Slic3r
             m_manager->set_selected_machine("");
             if (!lan_vpn_direct_mode_enabled())
                 agent->set_user_selected_machine("");
+            return;
+        }
+
+        // LAN connection timeout: if the selected LAN printer has never received any
+        // push data (m_push_count==0) AND is_connected() has gone false (>30 s since
+        // last reset()), the MQTT connection silently failed. Show an error and reset.
+        if (obj->is_lan_mode_printer() && !obj->is_connected() && obj->m_push_count == 0) {
+            BOOST_LOG_TRIVIAL(warning) << "on_timer: LAN printer connection timed out, dev_id=" << obj->get_dev_id();
+            std::string dev_name = obj->get_dev_name();
+            m_manager->set_selected_machine("");
+            wxString text = wxString::Format(
+                _L("Failed to connect to %s. Check the printer IP address, access code, and that the printer is reachable from this network."),
+                wxString::FromUTF8(dev_name));
+            Slic3r::GUI::wxGetApp().show_dialog(text);
             return;
         }
 

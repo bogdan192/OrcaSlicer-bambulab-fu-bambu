@@ -28,6 +28,7 @@ class PhysicalPrinterDialog : public DPIDialog
 {
     DynamicPrintConfig* m_config            { nullptr };
     ConfigOptionsGroup* m_optgroup          { nullptr };
+    bool                m_hide_print_host_settings { false };
 
     Button*     m_printhost_browse_btn              {nullptr};
     Button*     m_printhost_test_btn                {nullptr};

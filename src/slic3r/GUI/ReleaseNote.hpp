@@ -37,6 +37,7 @@
 #include "Widgets/ScrolledWindow.hpp"
 #include <wx/hashmap.h>
 #include <wx/webview.h>
+#include <atomic>
 
 #include "Jobs/Worker.hpp"
 
@@ -337,6 +338,8 @@ public:
     std::shared_ptr<BBLStatusBarSend> m_status_bar;
     std::unique_ptr<Worker> m_worker;
     std::map<std::string, std::string> m_models_map;// display_name -> model_id
+    std::atomic<bool> m_detect_pending{ false };
+    std::atomic<uint64_t> m_detect_generation{ 0 };
 
     void switch_input_panel(int index);
     void on_cancel();

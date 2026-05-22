@@ -2549,8 +2549,13 @@ void Sidebar::update_all_preset_comboboxes()
         update_printer_thumbnail();
     }
 
-    // Orca:: show device tab based on vendor type
-    p_mainframe->show_device(preset_bundle.use_bbl_device_tab());
+    // Orca:: show device tab based on vendor type.
+    // In LAN/VPN direct mode Bambu printers are controlled by the native device
+    // panel, not by loading the printer IP as a generic print-host web UI.
+    const bool direct_bambu_mode = wxGetApp().app_config &&
+                                   wxGetApp().app_config->get_bool("lan_mode_only") &&
+                                   preset_bundle.is_bbl_vendor();
+    p_mainframe->show_device(preset_bundle.use_bbl_device_tab() || direct_bambu_mode);
     p_mainframe->m_tabpanel->SetSelection(p_mainframe->m_tabpanel->GetSelection());
 }
 
@@ -9977,7 +9982,10 @@ void Plater::priv::on_tab_selection_changing(wxBookCtrlEvent& e)
     sidebar_layout.show = new_sel == MainFrame::tp3DEditor || new_sel == MainFrame::tpPreview;
     update_sidebar();
     int old_sel = e.GetOldSelection();
-    if (wxGetApp().preset_bundle && wxGetApp().preset_bundle->use_bbl_device_tab() && new_sel == MainFrame::tpMonitor) {
+    const bool direct_bambu_mode = wxGetApp().preset_bundle && wxGetApp().app_config &&
+                                   wxGetApp().app_config->get_bool("lan_mode_only") &&
+                                   wxGetApp().preset_bundle->is_bbl_vendor();
+    if (wxGetApp().preset_bundle && (wxGetApp().preset_bundle->use_bbl_device_tab() || direct_bambu_mode) && new_sel == MainFrame::tpMonitor) {
         if (!Slic3r::NetworkAgent::is_network_module_loaded()) {
             e.Veto();
             BOOST_LOG_TRIVIAL(info) << boost::format("skipped tab switch from %1% to %2%, lack of network plugins") % old_sel % new_sel;

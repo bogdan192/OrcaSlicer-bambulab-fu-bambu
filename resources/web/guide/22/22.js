@@ -3,6 +3,11 @@ var m_ProfileItem;
 
 var FilamentPriority=new Array( "pla","abs","pet","tpu","pc");
 var VendorPriority=new Array("generic");
+
+function IsLanVpnDirectMode()
+{
+	return m_ProfileItem && (m_ProfileItem["lan_mode_only"] === true || m_ProfileItem["lan_mode_only"] === "1");
+}
   
 function OnInit()
 {
@@ -235,7 +240,7 @@ function SortUI()
 		ChooseDefaultFilament();
 	
 	//--If Need Install Network Plugin
-	if(m_ProfileItem["network_plugin_install"]!='1' || (m_ProfileItem["network_plugin_install"]=='1' && m_ProfileItem["network_plugin_compability"]=='0') )
+	if(!IsLanVpnDirectMode() && (m_ProfileItem["network_plugin_install"]!='1' || (m_ProfileItem["network_plugin_install"]=='1' && m_ProfileItem["network_plugin_compability"]=='0')) )
 	{
 		$("#AcceptBtn").hide();
 		$("#GotoNetPluginBtn").show();

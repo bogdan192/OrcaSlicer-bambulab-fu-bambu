@@ -987,9 +987,6 @@ void GUI_App::post_init()
     hms_query = new HMSQuery();
 
     m_show_gcode_window = app_config->get_bool("show_gcode_window");
-    if (m_networking_need_update) {
-        show_network_plugin_download_dialog(false);
-    }
 
     // Start preset sync after project opened, otherwise we could have preset change during project opening which could cause crash 
     if (app_config->get("sync_user_preset") == "true") {
@@ -1012,6 +1009,10 @@ void GUI_App::post_init()
     if (this->preset_updater) { // G-Code Viewer does not initialize preset_updater.
         CallAfter([this] {
             bool cw_showed = this->config_wizard_startup();
+
+            if (m_networking_need_update && !cw_showed && !app_config->get_bool("lan_mode_only")) {
+                show_network_plugin_download_dialog(false);
+            }
 
             std::string http_url = get_http_url(app_config->get_country_code());
             std::string language = GUI::into_u8(current_language_code());
@@ -2008,14 +2009,18 @@ void GUI_App::init_networking_callbacks()
                                     text = wxString::Format(_L("Incorrect password"));
                                     wxGetApp().show_dialog(text);
                                 } else {
-                                text = wxString::Format(_L("Connect %s failed! [SN:%s, code=%s]"), from_u8(obj->get_dev_name()), obj->get_dev_id(), msg);
+                                    text = wxString::Format(_L("Connect %s failed! [SN:%s, code=%s]"), from_u8(obj->get_dev_name()), obj->get_dev_id(), msg);
                                     wxGetApp().show_dialog(text);
                                 }
                                 event.SetInt(-1);
                             } else if (state == ConnectStatus::ConnectStatusLost) {
+                                if (m_device_manager->selected_machine == dev_id) {
+                                    wxString text = wxString::Format(_L("Failed to connect to %s. Check that the printer IP and access code are correct and reachable."), from_u8(obj->get_dev_name()));
+                                    wxGetApp().show_dialog(text);
+                                }
                                 m_device_manager->set_selected_machine("");
                                 event.SetInt(-1);
-                                BOOST_LOG_TRIVIAL(info) << "set_on_local_connect_fn: state = lost";
+                                BOOST_LOG_TRIVIAL(info) << "set_on_local_connect_fn: state = lost, dev_id=" << dev_id;
                             } else {
                                 event.SetInt(-1);
                                 BOOST_LOG_TRIVIAL(info) << "set_on_local_connect_fn: state = " << state;
@@ -3536,16 +3541,18 @@ void GUI_App::copy_network_if_available()
     std::string data_dir_str = data_dir();
     boost::filesystem::path data_dir_path(data_dir_str);
     auto plugin_folder = data_dir_path / "plugins";
-    auto cache_folder = data_dir_path / "ota";
-    std::string changelog_file = cache_folder.string() + "/network_plugins.json";
+    auto cache_root = data_dir_path / "ota";
+    auto cache_folder = cache_root / "plugins";
+    if (!boost::filesystem::exists(cache_folder / "network_plugins.json") &&
+        boost::filesystem::exists(cache_root / "network_plugins.json"))
+        cache_folder = cache_root;
+    std::string changelog_file = (cache_folder / "network_plugins.json").string();
 
     if (!boost::filesystem::exists(plugin_folder))
         boost::filesystem::create_directory(plugin_folder);
 
     pjarczak_copy_local_overlay_runtime(plugin_folder);
-
-    if (app_config->get("update_network_plugin") != "true")
-        return;
+    const bool force_cached_install = app_config->get("update_network_plugin") == "true";
 
     std::string cached_version;
     if (boost::filesystem::exists(changelog_file)) {
@@ -3574,6 +3581,13 @@ void GUI_App::copy_network_if_available()
     };
 
     if (pj_force_linux_payload) {
+        const auto existing_manifest = plugin_folder / Slic3r::PJarczakLinuxBridge::linux_payload_manifest_file_name();
+        if (!force_cached_install && boost::filesystem::exists(existing_manifest)) {
+            std::string validate_reason;
+            if (Slic3r::PJarczakLinuxBridge::validate_linux_payload_set_against_manifest(plugin_folder, &validate_reason))
+                return;
+        }
+
         if (!boost::filesystem::exists(cache_folder)) {
             try {
                 boost::filesystem::create_directories(cache_folder);
@@ -3675,6 +3689,13 @@ void GUI_App::copy_network_if_available()
     live555_library_dst = plugin_folder.string() + "/liblive555.so";
 #endif
 
+    const bool plugin_missing =
+        !boost::filesystem::exists(network_library_dst) ||
+        !boost::filesystem::exists(player_library_dst) ||
+        !boost::filesystem::exists(live555_library_dst);
+    if (!force_cached_install && !plugin_missing)
+        return;
+
     if (boost::filesystem::exists(network_library)) {
         if (!copy_one(network_library, network_library_dst))
             return;
@@ -3713,6 +3734,14 @@ bool GUI_App::on_init_network(bool try_backup)
     const auto mark_networking_need_update = [this]() {
         m_networking_need_update = true;
     };
+    const auto sync_installed_networking_state = [this](bool enabled) {
+        if (!app_config)
+            return;
+        if (app_config->get_bool("installed_networking") == enabled)
+            return;
+        app_config->set_bool("installed_networking", enabled);
+        app_config->save();
+    };
 
     std::string config_version = get_latest_network_version();
 #if defined(__LINUX__)
@@ -3737,6 +3766,7 @@ bool GUI_App::on_init_network(bool try_backup)
         if (config_version.empty()) {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": no version configured, need to download";
             mark_networking_need_update();
+            sync_installed_networking_state(false);
 
             if (!m_device_manager)
                 m_device_manager = new Slic3r::DeviceManager();
@@ -3749,6 +3779,7 @@ bool GUI_App::on_init_network(bool try_backup)
         if (bridge_mode && !bridge_payload_ready) {
             BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": skipping bridge DLL load because payload/runtime is not ready, reason=" << bridge_payload_reason;
             mark_networking_need_update();
+            sync_installed_networking_state(false);
 
             if (!m_device_manager)
                 m_device_manager = new Slic3r::DeviceManager();
@@ -3788,6 +3819,7 @@ bool GUI_App::on_init_network(bool try_backup)
                         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": can not get bambu source module!";
                         m_networking_compatible = false;
                         mark_networking_need_update();
+                        sync_installed_networking_state(false);
                     } else {
                         create_network_agent = true;
                     }
@@ -3802,11 +3834,13 @@ bool GUI_App::on_init_network(bool try_backup)
                 }
                 BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": on_init_network, version dismatch, need upload network module";
                 mark_networking_need_update();
+                sync_installed_networking_state(false);
             }
         } else {
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": on_init_network, load dll failed";
             BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": on_init_network, need upload network module";
             mark_networking_need_update();
+            sync_installed_networking_state(false);
         }
     }
 
@@ -3824,6 +3858,7 @@ bool GUI_App::on_init_network(bool try_backup)
             m_agent = nullptr;
             m_networking_compatible = false;
             mark_networking_need_update();
+            sync_installed_networking_state(false);
             create_network_agent = false;
         }
 
@@ -3869,10 +3904,15 @@ bool GUI_App::on_init_network(bool try_backup)
                 m_agent->set_country_code(country_code);
                 m_agent->start();
             }
+
+            sync_installed_networking_state(true);
         }
     } else {
         int result = Slic3r::NetworkAgent::unload_network_module();
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": on_init_network fallback, unload_network_module, result = " << result;
+
+        if (should_load_networking_plugin)
+            sync_installed_networking_state(false);
 
         if (!m_device_manager)
             m_device_manager = new Slic3r::DeviceManager();

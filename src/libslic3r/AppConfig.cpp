@@ -523,10 +523,8 @@ void AppConfig::set_defaults()
         set_bool("lan_mode_only", true);
     }
 
-    if(get("installed_networking").empty()) {
-        // Direct Bambu LAN/VPN printer communication still uses the local networking plugin.
-        // lan_mode_only prevents creating or falling back to a Bambu cloud agent.
-        set_bool("installed_networking", true);
+    if (get("installed_networking").empty()) {
+        set_bool("installed_networking", false);
     }
 
     // Remove legacy window positions/sizes

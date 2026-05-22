@@ -179,9 +179,6 @@ GuideFrame::GuideFrame(GUI_App *pGUI, long style)
     // Bind(wxEVT_IDLE, &GuideFrame::OnIdle, this);
     // Bind(wxEVT_CLOSE_WINDOW, &GuideFrame::OnClose, this);
 
-    // UI
-    SetStartPage(BBL_REGION);
-
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(",  finished");
     wxGetApp().UpdateDlgDarkUI(this);
 }
@@ -506,6 +503,10 @@ void GuideFrame::OnScriptMessage(wxWebViewEvent &evt)
         }
         else if (strCmd == "user_guide_finish") {
             SaveProfile();
+
+            const bool direct_only = wxGetApp().app_config->get_bool("lan_mode_only");
+            if (direct_only && !network_plugin_ready)
+                InstallNetplugin = true;
 
             std::string oldregion = m_ProfileJson["region"];
             bool        bLogin    = false;
@@ -1236,6 +1237,7 @@ int GuideFrame::SaveProfileData()
 
         m_ProfileJson["network_plugin_install"] = wxGetApp().app_config->get("app","installed_networking");
         m_ProfileJson["network_plugin_compability"] = wxGetApp().is_compatibility_version() ? "1" : "0";
+        m_ProfileJson["lan_mode_only"] = wxGetApp().app_config->get_bool("lan_mode_only");
         network_plugin_ready = wxGetApp().is_compatibility_version();
 
         StealthMode = wxGetApp().app_config->get_bool("app","stealth_mode");

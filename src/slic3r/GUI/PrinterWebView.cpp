@@ -5,6 +5,8 @@
 #include "slic3r/GUI/wxExtensions.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/MainFrame.hpp"
+#include "slic3r/GUI/ReleaseNote.hpp"
+#include "slic3r/GUI/Widgets/Button.hpp"
 #include "libslic3r_version.h"
 
 #include <wx/sizer.h>
@@ -29,6 +31,17 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
  {
 
     wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
+
+    auto action_sizer = new wxBoxSizer(wxHORIZONTAL);
+    auto add_lan_printer_btn = new Button(this, _L("Add LAN/VPN Printer"));
+    add_lan_printer_btn->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
+    add_lan_printer_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        InputIpAddressDialog dlg(this);
+        dlg.ShowModal();
+    });
+    action_sizer->Add(add_lan_printer_btn, 0, wxALL, FromDIP(8));
+    action_sizer->AddStretchSpacer();
+    topsizer->Add(action_sizer, 0, wxEXPAND);
 
       // Create the webview
     m_browser = WebView::CreateWebView(this, "");

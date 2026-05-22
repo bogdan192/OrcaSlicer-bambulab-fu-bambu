@@ -164,6 +164,9 @@ public:
     // Get underlying agent handle from BBLNetworkPlugin
     void* get_network_agent();
 
+    // Fire the on_local_connect_fn callback with ConnectStatusFailed directly
+    void on_local_connect_failed(const std::string& dev_id, const std::string& msg);
+
 private:
     struct PrinterCallbacks {
         OnMsgArrivedFn on_ssdp_msg_fn = nullptr;

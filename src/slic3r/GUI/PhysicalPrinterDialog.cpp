@@ -1,6 +1,7 @@
 #include "PhysicalPrinterDialog.hpp"
 #include "PresetComboBoxes.hpp"
 #include "PrinterCloudAuthDialog.hpp"
+#include "ReleaseNote.hpp"
 
 #include <cstddef>
 #include <vector>
@@ -95,8 +96,22 @@ PhysicalPrinterDialog::PhysicalPrinterDialog(wxWindow* parent) :
 
     m_config = &wxGetApp().preset_bundle->printers.get_edited_preset().config;
     m_optgroup = new ConfigOptionsGroup(this, _L("Print Host upload"), m_config);
+    m_hide_print_host_settings = wxGetApp().preset_bundle->is_bbl_vendor();
     check_host_key_valid();
     build_printhost_settings(m_optgroup);
+
+    wxBoxSizer* bambu_lan_sizer = nullptr;
+    if (m_hide_print_host_settings) {
+        auto add_lan_printer_btn = new Button(this, _L("Add LAN/VPN Printer"));
+        add_lan_printer_btn->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
+        add_lan_printer_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            InputIpAddressDialog dlg(this);
+            dlg.ShowModal();
+        });
+
+        bambu_lan_sizer = new wxBoxSizer(wxHORIZONTAL);
+        bambu_lan_sizer->Add(add_lan_printer_btn, 0, wxALIGN_CENTER_VERTICAL);
+    }
 
     auto dlg_btns = new DialogButtons(this, {"OK"});
 
@@ -107,7 +122,12 @@ PhysicalPrinterDialog::PhysicalPrinterDialog(wxWindow* parent) :
 
     // topSizer->Add(label_top           , 0, wxEXPAND | wxLEFT | wxTOP | wxRIGHT, BORDER_W);
     topSizer->Add(input_sizer         , 0, wxEXPAND | wxALL, BORDER_W);
-    topSizer->Add(m_optgroup->sizer   , 1, wxEXPAND | wxLEFT | wxTOP | wxRIGHT, BORDER_W);
+    // Bambu printers use the local machine/network-agent flow. These generic
+    // PrintHost backends cannot validate or use Bambu LAN access-code setup.
+    if (m_hide_print_host_settings && bambu_lan_sizer)
+        topSizer->Add(bambu_lan_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, BORDER_W);
+    else
+        topSizer->Add(m_optgroup->sizer, 1, wxEXPAND | wxLEFT | wxTOP | wxRIGHT, BORDER_W);
     topSizer->Add(dlg_btns, 0, wxEXPAND);
 
     Bind(wxEVT_CLOSE_WINDOW, [this](auto& e) {this->EndModal(wxID_NO);});
@@ -588,6 +608,14 @@ void PhysicalPrinterDialog::update_preset_input() {
 
 void PhysicalPrinterDialog::update(bool printer_change)
 {
+    if (m_hide_print_host_settings) {
+        update_preset_input();
+
+        this->SetSize(this->GetBestSize());
+        this->Layout();
+        return;
+    }
+
     m_optgroup->reload_config();
 
     const PrinterTechnology tech = Preset::printer_technology(*m_config);
